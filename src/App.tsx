@@ -1,18 +1,17 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Toaster } from 'react-hot-toast';
-import { 
-  Wifi, 
-  WifiOff, 
-  Copy, 
-  Share, 
-  Trash2, 
-  RefreshCw, 
-  Plus, 
+import {
+  Wifi,
+  WifiOff,
+  Copy,
+  Share,
+  Trash2,
+  RefreshCw,
+  Plus,
   Download,
   Globe,
-  Github,
-  Heart
+  Github
 } from 'lucide-react';
 import { useClipboard } from './hooks/useClipboard';
 
@@ -311,12 +310,10 @@ const App: React.FC = () => {
         <div className="max-w-4xl mx-auto px-4 py-6">
           <div className="flex justify-center items-center gap-2 text-sm text-gray-600">
             <span>{t('madeWith')}</span>
-            <Heart className="h-4 w-4 text-red-500" />
-            <span>{t('author')}</span>
             <span>•</span>
-            <a 
-              href="https://github.com/kjyang-0114/online-clipboard" 
-              target="_blank" 
+            <a
+              href="https://github.com/kjyang-0114/online-clipboard"
+              target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
             >

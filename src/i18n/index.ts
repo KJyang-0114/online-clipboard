@@ -57,8 +57,8 @@ const resources = {
       'ja': '日本語',
       
       // Footer
-      madeWith: '用 ❤️ 製作',
-      author: 'KJ Yang',
+      madeWith: 'kjyang-0114 製作',
+      author: '',
       sourceCode: '原始碼',
       
       // Features
@@ -128,8 +128,8 @@ const resources = {
       'ja': '日本語',
       
       // Footer
-      madeWith: 'Made with ❤️ by',
-      author: 'KJ Yang',
+      madeWith: 'Made by kjyang-0114',
+      author: '',
       sourceCode: 'Source Code',
       
       // Features
@@ -199,8 +199,8 @@ const resources = {
       'ja': '日本語',
       
       // Footer
-      madeWith: '❤️ で作成 by',
-      author: 'KJ Yang',
+      madeWith: 'kjyang-0114 が作成',
+      author: '',
       sourceCode: 'ソースコード',
       
       // Features

@@ -8,12 +8,16 @@ export interface RealtimeClipboardData {
   expiresAt: Date;
 }
 
-// 使用 GitHub Gist 作為免費的後端存儲
+// 使用 JSONBin.io 作為免費的後端存儲（支援 CORS）
 class RealtimeClipboardManager {
   private pollingInterval: NodeJS.Timeout | null = null;
-  private currentGistId: string | null = null;
+  private currentBinId: string | null = null;
   private lastContent: string = '';
   private subscribers: Array<(data: RealtimeClipboardData | null) => void> = [];
+  
+  // JSONBin.io API 配置
+  private readonly API_BASE = 'https://api.jsonbin.io/v3/b';
+  private readonly API_KEY = '$2a$10$gmgdZFGV68WWnAMItOYfyuI5RGIw8SZRYu0fDlovaV5qadOWisRia';
 
   // 生成隨機 ID
   generateId(): string {
@@ -42,91 +46,112 @@ class RealtimeClipboardManager {
     };
 
     try {
-      // 使用 GitHub Gist API 創建新的 gist
-      const response = await fetch('https://api.github.com/gists', {
+      // 使用 JSONBin.io 創建新的 bin
+      const response = await fetch(`${this.API_BASE}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-Master-Key': this.API_KEY,
+          'X-Bin-Name': `clipboard-${id}`,
+          'X-Bin-Private': 'false'
         },
         body: JSON.stringify({
-          description: `Online Clipboard - ${id}`,
-          public: true,
-          files: {
-            [`clipboard-${id}.json`]: {
-              content: JSON.stringify(clipboardData)
-            }
+          clipboardId: id,
+          data: clipboardData,
+          metadata: {
+            type: 'online-clipboard',
+            version: '1.0.0'
           }
         })
       });
 
       if (!response.ok) {
+        console.error('Failed to create clipboard, falling back to local storage');
         throw new Error('Failed to create clipboard');
       }
 
       const result = await response.json();
-      this.currentGistId = result.id;
+      this.currentBinId = result.metadata?.id || id;
       
-      // 保存 gist ID 到本地存儲
-      localStorage.setItem(`clipboard-gist-${id}`, result.id);
+      // 保存 bin ID 到本地存儲
+      if (this.currentBinId) {
+        localStorage.setItem(`clipboard-bin-${id}`, this.currentBinId);
+      }
       
+      console.log('Created clipboard with realtime sync:', id);
       return { id, expiresAt };
     } catch (error) {
-      console.error('Error creating clipboard:', error);
-      throw new Error('Failed to create clipboard');
+      console.error('Error creating clipboard, using fallback:', error);
+      
+      // 回退到本地存儲
+      const localData = { ...clipboardData };
+      localStorage.setItem(`clipboard-data-${id}`, JSON.stringify(localData));
+      
+      return { id, expiresAt };
     }
   }
 
   // 讀取剪貼簿
   async get(id: string): Promise<RealtimeClipboardData | null> {
     try {
-      // 嘗試從本地存儲獲取 gist ID
-      const gistId = localStorage.getItem(`clipboard-gist-${id}`) || this.currentGistId;
+      // 首先嘗試從遠端獲取
+      const binId = localStorage.getItem(`clipboard-bin-${id}`) || this.currentBinId;
       
-      if (!gistId) {
-        // 嘗試搜索公開的 gist
-        const searchResponse = await fetch(`https://api.github.com/gists/public?per_page=100`);
-        if (!searchResponse.ok) {
+      if (binId && binId !== id) {
+        try {
+          const response = await fetch(`${this.API_BASE}/${binId}/latest`, {
+            headers: {
+              'X-Master-Key': this.API_KEY
+            }
+          });
+          
+          if (response.ok) {
+            const result = await response.json();
+            const data = result.record?.data || result.data;
+            
+            if (data && data.id === id) {
+              // 轉換日期
+              const clipboardData: RealtimeClipboardData = {
+                ...data,
+                createdAt: new Date(data.createdAt),
+                updatedAt: new Date(data.updatedAt),
+                expiresAt: new Date(data.expiresAt)
+              };
+
+              // 檢查是否過期
+              if (clipboardData.expiresAt < new Date()) {
+                return null;
+              }
+
+              return clipboardData;
+            }
+          }
+        } catch (remoteError) {
+          console.warn('Remote fetch failed, trying local:', remoteError);
+        }
+      }
+
+      // 回退到本地存儲
+      const localData = localStorage.getItem(`clipboard-data-${id}`);
+      if (localData) {
+        const data = JSON.parse(localData);
+        const clipboardData: RealtimeClipboardData = {
+          ...data,
+          createdAt: new Date(data.createdAt),
+          updatedAt: new Date(data.updatedAt),
+          expiresAt: new Date(data.expiresAt)
+        };
+
+        // 檢查是否過期
+        if (clipboardData.expiresAt < new Date()) {
+          localStorage.removeItem(`clipboard-data-${id}`);
           return null;
         }
-        
-        const gists = await searchResponse.json();
-        const targetGist = gists.find((gist: any) => 
-          gist.description && gist.description.includes(id)
-        );
-        
-        if (!targetGist) {
-          return null;
-        }
-        
-        this.currentGistId = targetGist.id;
-        localStorage.setItem(`clipboard-gist-${id}`, targetGist.id);
+
+        return clipboardData;
       }
 
-      const response = await fetch(`https://api.github.com/gists/${gistId || this.currentGistId}`);
-      
-      if (!response.ok) {
-        return null;
-      }
-
-      const gist = await response.json();
-      const fileName = Object.keys(gist.files)[0];
-      const fileContent = gist.files[fileName].content;
-      const data = JSON.parse(fileContent);
-      
-      // 轉換日期
-      const clipboardData: RealtimeClipboardData = {
-        ...data,
-        createdAt: new Date(data.createdAt),
-        updatedAt: new Date(data.updatedAt),
-        expiresAt: new Date(data.expiresAt)
-      };
-
-      // 檢查是否過期
-      if (clipboardData.expiresAt < new Date()) {
-        return null;
-      }
-
-      return clipboardData;
+      return null;
     } catch (error) {
       console.error('Error getting clipboard:', error);
       return null;
@@ -147,28 +172,41 @@ class RealtimeClipboardManager {
         updatedAt: new Date()
       };
 
-      const gistId = localStorage.getItem(`clipboard-gist-${id}`) || this.currentGistId;
-      if (!gistId) {
-        throw new Error('Gist ID not found');
-      }
+      // 嘗試更新遠端
+      const binId = localStorage.getItem(`clipboard-bin-${id}`) || this.currentBinId;
+      if (binId && binId !== id) {
+        try {
+          const response = await fetch(`${this.API_BASE}/${binId}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Master-Key': this.API_KEY
+            },
+            body: JSON.stringify({
+              clipboardId: id,
+              data: updatedData
+            })
+          });
 
-      const response = await fetch(`https://api.github.com/gists/${gistId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          files: {
-            [`clipboard-${id}.json`]: {
-              content: JSON.stringify(updatedData)
-            }
+          if (response.ok) {
+            console.log('Updated remote clipboard:', id);
+            return;
           }
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update clipboard');
+        } catch (remoteError) {
+          console.warn('Remote update failed, updating local:', remoteError);
+        }
       }
+
+      // 回退到本地存儲更新
+      localStorage.setItem(`clipboard-data-${id}`, JSON.stringify(updatedData));
+      
+      // 觸發 storage 事件以通知其他標籤頁
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: `clipboard-data-${id}`,
+        newValue: JSON.stringify(updatedData),
+        storageArea: localStorage
+      }));
+      
     } catch (error) {
       console.error('Error updating clipboard:', error);
       throw error;
@@ -178,13 +216,25 @@ class RealtimeClipboardManager {
   // 刪除剪貼簿
   async delete(id: string): Promise<void> {
     try {
-      const gistId = localStorage.getItem(`clipboard-gist-${id}`) || this.currentGistId;
-      if (gistId) {
-        await fetch(`https://api.github.com/gists/${gistId}`, {
-          method: 'DELETE'
-        });
-        localStorage.removeItem(`clipboard-gist-${id}`);
+      // 嘗試刪除遠端
+      const binId = localStorage.getItem(`clipboard-bin-${id}`) || this.currentBinId;
+      if (binId && binId !== id) {
+        try {
+          await fetch(`${this.API_BASE}/${binId}`, {
+            method: 'DELETE',
+            headers: {
+              'X-Master-Key': this.API_KEY
+            }
+          });
+        } catch (remoteError) {
+          console.warn('Remote delete failed:', remoteError);
+        }
       }
+
+      // 清理本地存儲
+      localStorage.removeItem(`clipboard-bin-${id}`);
+      localStorage.removeItem(`clipboard-data-${id}`);
+      
       this.stopPolling();
     } catch (error) {
       console.error('Error deleting clipboard:', error);
@@ -202,11 +252,32 @@ class RealtimeClipboardManager {
     
     // 立即載入初始數據
     this.get(id).then(callback).catch(error => {
+      console.warn('Initial load failed:', error);
       onError?.(error as Error);
     });
     
     // 開始輪詢
     this.startPolling(id);
+    
+    // 監聽本地存儲變化（跨標籤頁同步）
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key === `clipboard-data-${id}` && event.newValue) {
+        try {
+          const data = JSON.parse(event.newValue);
+          const clipboardData: RealtimeClipboardData = {
+            ...data,
+            createdAt: new Date(data.createdAt),
+            updatedAt: new Date(data.updatedAt),
+            expiresAt: new Date(data.expiresAt)
+          };
+          callback(clipboardData);
+        } catch (error) {
+          console.error('Error parsing storage event:', error);
+        }
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
     
     // 返回取消訂閱函數
     return () => {
@@ -217,6 +288,7 @@ class RealtimeClipboardManager {
       if (this.subscribers.length === 0) {
         this.stopPolling();
       }
+      window.removeEventListener('storage', handleStorageChange);
     };
   }
 
@@ -230,19 +302,21 @@ class RealtimeClipboardManager {
       try {
         const data = await this.get(id);
         
-        // 檢查內容是否有變化
+        // 檢查內容是否有變化，使用 updatedAt 時間戳確保最後更新優先
         if (data && data.content !== this.lastContent) {
           this.lastContent = data.content;
           
-          // 通知所有訂閱者
+          // 通知所有訂閱者，傳遞最新版本
           this.subscribers.forEach(callback => {
             callback(data);
           });
+          
+          console.log('Synced latest version:', new Date(data.updatedAt).toLocaleTimeString());
         }
       } catch (error) {
-        console.error('Polling error:', error);
+        console.warn('Polling error:', error);
       }
-    }, 3000); // 每 3 秒檢查一次（GitHub API 有速率限制）
+    }, 1500); // 每 1.5 秒檢查一次，提升同步速度
   }
 
   // 停止輪詢

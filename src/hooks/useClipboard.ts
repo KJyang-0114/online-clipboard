@@ -52,16 +52,20 @@ export const useClipboard = (): UseClipboardReturn => {
   const lastUserInputRef = useRef(Date.now());
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Handle content changes with typing detection
+  // Handle content changes with typing detection and auto-save
   const setContent = useCallback((newContent: string) => {
     setContentState(newContent);
     isUserTypingRef.current = true;
     lastUserInputRef.current = Date.now();
     
-    // Clear previous timeout
+    // Clear previous timeouts
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
+    }
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
     }
     
     // Set user as not typing after 2 seconds of inactivity
@@ -70,7 +74,21 @@ export const useClipboard = (): UseClipboardReturn => {
         isUserTypingRef.current = false;
       }
     }, 2000);
-  }, []);
+    
+    // Auto-save after 3 seconds of inactivity (only if clipboard exists)
+    if (clipboardId && newContent.trim() && newContent !== lastKnownContent) {
+      autoSaveTimeoutRef.current = setTimeout(async () => {
+        try {
+          await updateClipboard(clipboardId, newContent);
+          setLastKnownContent(newContent);
+          setLastUpdated(new Date());
+          console.log('Auto-saved clipboard:', clipboardId);
+        } catch (error) {
+          console.warn('Auto-save failed:', error);
+        }
+      }, 3000);
+    }
+  }, [clipboardId, lastKnownContent]);
   
   // Set clipboard ID and start real-time sync
   const setClipboardId = useCallback((id: string) => {
@@ -87,16 +105,21 @@ export const useClipboard = (): UseClipboardReturn => {
       const unsubscribe = subscribeToClipboard(
         id,
         (data) => {
-          if (data && !isUserTypingRef.current && data.content !== lastKnownContent) {
-            setContentState(data.content);
-            setLastKnownContent(data.content);
-            setLastUpdated(data.updatedAt);
-            setExpiresAt(data.expiresAt);
-            setIsConnected(true);
+          if (data && !isUserTypingRef.current) {
+            // 最後更新優先：總是接受遠端的最新版本
+            const isNewerVersion = !lastUpdated || data.updatedAt > lastUpdated;
             
-            // Show sync notification if content actually changed
-            if (data.content !== content) {
-              toast.success(t('syncFromDevice'));
+            if (isNewerVersion && data.content !== lastKnownContent) {
+              setContentState(data.content);
+              setLastKnownContent(data.content);
+              setLastUpdated(data.updatedAt);
+              setExpiresAt(data.expiresAt);
+              setIsConnected(true);
+              
+              // Show sync notification if content actually changed
+              if (data.content !== content) {
+                toast.success(t('syncFromDevice'));
+              }
             }
           } else if (!data) {
             // Clipboard not found or expired
@@ -204,9 +227,11 @@ export const useClipboard = (): UseClipboardReturn => {
     
     setIsSyncing(true);
     try {
-      await updateClipboard(clipboardId, content);
+      // 立即更新本地狀態以提供即時反饋
       setLastKnownContent(content);
       setLastUpdated(new Date());
+      
+      await updateClipboard(clipboardId, content);
       toast.success(t('updated'));
       setIsConnected(true);
     } catch (error) {
@@ -304,6 +329,9 @@ export const useClipboard = (): UseClipboardReturn => {
       }
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
+      }
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
       }
     };
   }, []);
