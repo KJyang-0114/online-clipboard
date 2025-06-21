@@ -2,6 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
+/* AdSense 廣告樣式 */
+.adsense-container {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.adsbygoogle {
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+/* 確保廣告在移動設備上正確顯示 */
+@media (max-width: 768px) {
+  .adsense-container {
+    padding: 0 10px;
+  }
+}
+
 @layer base {
   html {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;

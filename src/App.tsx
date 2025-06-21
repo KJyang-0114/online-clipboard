@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Toaster } from 'react-hot-toast';
 import {
@@ -14,6 +14,7 @@ import {
   Github
 } from 'lucide-react';
 import { useClipboard } from './hooks/useClipboard';
+import AdSense from './components/AdSense';
 
 const LanguageSelector: React.FC = () => {
   const { i18n, t } = useTranslation();
@@ -74,6 +75,7 @@ const StatusIndicator: React.FC<{ isConnected: boolean; isSyncing: boolean }> = 
 const App: React.FC = () => {
   const { t } = useTranslation();
   const [inputClipboardId, setInputClipboardId] = useState('');
+
   
   const {
     content,
@@ -303,7 +305,23 @@ const App: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* Google AdSense 廣告 - 頁面中間 */}
+        <div className="flex justify-center my-8">
+          <AdSense
+            adSlot="1234567890"
+            className="max-w-full"
+          />
+        </div>
       </main>
+
+      {/* Google AdSense 廣告 - Footer上方 */}
+      <div className="flex justify-center my-8">
+        <AdSense
+          adSlot="2345678901"
+          className="max-w-full"
+        />
+      </div>
       
       {/* Footer */}
       <footer className="bg-white border-t mt-12">
