@@ -40,9 +40,9 @@ class ClipboardServiceConfig {
   
   private async detectService(): Promise<void> {
     try {
-      // 啟用即時同步支援跨設備同步
+      // 啟用本地即時同步支援跨設備同步
       this.serviceType = 'realtime';
-      console.log('使用 GitHub Gist 實現跨設備即時同步');
+      console.log('使用本地存儲實現跨瀏覽器同步');
     } catch (error) {
       this.serviceType = 'local';
       console.log('即時同步初始化失敗，回退到本地存儲');
@@ -173,9 +173,9 @@ export const getServiceInfo = () => {
   const serviceType = config.getServiceType();
   return {
     type: serviceType,
-    name: serviceType === 'realtime' ? 'GitHub Gist 即時同步' : '本地存儲',
+    name: serviceType === 'realtime' ? '本地存儲即時同步' : '本地存儲',
     description: serviceType === 'realtime'
-      ? '使用 GitHub Gist 實現跨設備即時同步'
+      ? '使用本地存儲實現跨瀏覽器即時同步'
       : '本地存儲，支援跨標籤頁同步',
     supportsRealtime: true,
     supportsCrossDevice: serviceType === 'realtime'
