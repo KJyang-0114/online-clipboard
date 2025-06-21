@@ -159,4 +159,4 @@ MIT License - 詳見 [LICENSE](LICENSE) 文件
 
 ---
 
-Made with ❤️ by [KJ Yang](https://github.com/kjyang-0114)
+Made with ❤️ by [KJyang](https://github.com/kjyang-0114)
