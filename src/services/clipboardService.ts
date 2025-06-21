@@ -1,12 +1,12 @@
 // 剪貼簿服務配置和抽象層
-import { 
-  createClipboard as firebaseCreate,
-  getClipboard as firebaseGet,
-  updateClipboard as firebaseUpdate,
-  deleteClipboard as firebaseDelete,
-  subscribeToClipboard as firebaseSubscribe,
-  ClipboardData as FirebaseClipboardData
-} from '../firebase/clipboard';
+import {
+  createClipboard as realtimeCreate,
+  getClipboard as realtimeGet,
+  updateClipboard as realtimeUpdate,
+  deleteClipboard as realtimeDelete,
+  subscribeToClipboard as realtimeSubscribe,
+  RealtimeClipboardData
+} from './realtimeClipboard';
 
 import {
   createClipboard as localCreate,
@@ -27,41 +27,25 @@ export interface ClipboardData {
 }
 
 // 服務類型
-export type ClipboardServiceType = 'firebase' | 'local';
+export type ClipboardServiceType = 'realtime' | 'local';
 
 // 配置管理
 class ClipboardServiceConfig {
-  private serviceType: ClipboardServiceType = 'local'; // 默認使用本地存儲
+  private serviceType: ClipboardServiceType = 'realtime'; // 使用即時同步實現跨設備同步
   
   constructor() {
-    // 嘗試檢測 Firebase 是否可用
+    // 直接使用即時同步
     this.detectService();
   }
   
   private async detectService(): Promise<void> {
     try {
-      // 嘗試使用 Firebase（可以添加簡單的連接測試）
-      const isFirebaseAvailable = await this.testFirebaseConnection();
-      if (isFirebaseAvailable) {
-        this.serviceType = 'firebase';
-        console.log('使用 Firebase 作為後端服務');
-      } else {
-        this.serviceType = 'local';
-        console.log('使用本地存儲作為後端服務');
-      }
+      // 啟用即時同步支援跨設備同步
+      this.serviceType = 'realtime';
+      console.log('使用 GitHub Gist 實現跨設備即時同步');
     } catch (error) {
       this.serviceType = 'local';
-      console.log('Firebase 不可用，使用本地存儲作為後端服務');
-    }
-  }
-  
-  private async testFirebaseConnection(): Promise<boolean> {
-    try {
-      // 這裡可以添加 Firebase 連接測試
-      // 暫時返回 false，強制使用本地存儲
-      return false;
-    } catch {
-      return false;
+      console.log('即時同步初始化失敗，回退到本地存儲');
     }
   }
   
@@ -79,12 +63,12 @@ class ClipboardServiceConfig {
 const config = new ClipboardServiceConfig();
 
 // 數據轉換函數
-const convertFirebaseData = (data: FirebaseClipboardData): ClipboardData => ({
+const convertRealtimeData = (data: RealtimeClipboardData): ClipboardData => ({
   id: data.id,
   content: data.content,
-  createdAt: data.createdAt.toDate(),
-  updatedAt: data.updatedAt.toDate(),
-  expiresAt: data.expiresAt.toDate()
+  createdAt: data.createdAt,
+  updatedAt: data.updatedAt,
+  expiresAt: data.expiresAt
 });
 
 const convertLocalData = (data: LocalClipboardData): ClipboardData => ({
@@ -99,8 +83,8 @@ const convertLocalData = (data: LocalClipboardData): ClipboardData => ({
 export const createClipboard = async (content: string): Promise<{ id: string; expiresAt: Date }> => {
   const serviceType = config.getServiceType();
   
-  if (serviceType === 'firebase') {
-    return await firebaseCreate(content);
+  if (serviceType === 'realtime') {
+    return await realtimeCreate(content);
   } else {
     return await localCreate(content);
   }
@@ -109,9 +93,9 @@ export const createClipboard = async (content: string): Promise<{ id: string; ex
 export const getClipboard = async (id: string): Promise<ClipboardData | null> => {
   const serviceType = config.getServiceType();
   
-  if (serviceType === 'firebase') {
-    const data = await firebaseGet(id);
-    return data ? convertFirebaseData(data) : null;
+  if (serviceType === 'realtime') {
+    const data = await realtimeGet(id);
+    return data ? convertRealtimeData(data) : null;
   } else {
     const data = await localGet(id);
     return data ? convertLocalData(data) : null;
@@ -121,8 +105,8 @@ export const getClipboard = async (id: string): Promise<ClipboardData | null> =>
 export const updateClipboard = async (id: string, content: string): Promise<void> => {
   const serviceType = config.getServiceType();
   
-  if (serviceType === 'firebase') {
-    await firebaseUpdate(id, content);
+  if (serviceType === 'realtime') {
+    await realtimeUpdate(id, content);
   } else {
     await localUpdate(id, content);
   }
@@ -131,8 +115,8 @@ export const updateClipboard = async (id: string, content: string): Promise<void
 export const deleteClipboard = async (id: string): Promise<void> => {
   const serviceType = config.getServiceType();
   
-  if (serviceType === 'firebase') {
-    await firebaseDelete(id);
+  if (serviceType === 'realtime') {
+    await realtimeDelete(id);
   } else {
     await localDelete(id);
   }
@@ -145,10 +129,10 @@ export const subscribeToClipboard = (
 ): (() => void) => {
   const serviceType = config.getServiceType();
   
-  if (serviceType === 'firebase') {
-    return firebaseSubscribe(
+  if (serviceType === 'realtime') {
+    return realtimeSubscribe(
       id,
-      (data) => callback(data ? convertFirebaseData(data) : null),
+      (data) => callback(data ? convertRealtimeData(data) : null),
       onError
     );
   } else {
@@ -189,12 +173,12 @@ export const getServiceInfo = () => {
   const serviceType = config.getServiceType();
   return {
     type: serviceType,
-    name: serviceType === 'firebase' ? 'Firebase Firestore' : '本地存儲',
-    description: serviceType === 'firebase' 
-      ? '雲端同步，支援跨設備即時更新' 
+    name: serviceType === 'realtime' ? 'GitHub Gist 即時同步' : '本地存儲',
+    description: serviceType === 'realtime'
+      ? '使用 GitHub Gist 實現跨設備即時同步'
       : '本地存儲，支援跨標籤頁同步',
     supportsRealtime: true,
-    supportsCrossDevice: serviceType === 'firebase'
+    supportsCrossDevice: serviceType === 'realtime'
   };
 };
 
