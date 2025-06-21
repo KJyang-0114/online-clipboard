@@ -231,11 +231,27 @@ export const useClipboard = (): UseClipboardReturn => {
       setLastKnownContent(content);
       setLastUpdated(new Date());
       
+      // 顯示更新中提示
+      toast.loading(t('updating'));
+      
       await updateClipboard(clipboardId, content);
+      
+      // 顯示成功訊息和等待提示
+      toast.dismiss();
       toast.success(t('updated'));
+      
+      // 顯示等待同步的提示
+      setTimeout(() => {
+        toast(t('syncWait'), {
+          duration: 8000,
+          icon: '⏱️'
+        });
+      }, 1000);
+      
       setIsConnected(true);
     } catch (error) {
       console.error('Update failed:', error);
+      toast.dismiss();
       setIsConnected(false);
       
       if (error instanceof Error && error.message.includes('expired')) {

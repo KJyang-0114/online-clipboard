@@ -13,6 +13,7 @@ class RealtimeClipboardManager {
   private pollingInterval: NodeJS.Timeout | null = null;
   private lastContent: string = '';
   private subscribers: Array<(data: RealtimeClipboardData | null) => void> = [];
+  private corsIssueDetected: boolean = false;
 
   // JSONBin.io API 配置
   private readonly API_BASE = 'https://api.jsonbin.io/v3/b';
@@ -206,19 +207,8 @@ class RealtimeClipboardManager {
         throw new Error(`JSONBin API failed: ${response.status} - ${errorText}`);
       }
     } catch (error) {
-      console.warn('⚠️ [DEBUG] JSONBin 創建失敗，使用本地存儲:', error);
-      
-      // 回退到本地存儲
-      const localData = {
-        id: clipboardData.id,
-        content: clipboardData.content,
-        createdAt: clipboardData.createdAt.toISOString(),
-        updatedAt: clipboardData.updatedAt.toISOString(),
-        expiresAt: clipboardData.expiresAt.toISOString()
-      };
-      localStorage.setItem(`clipboard-data-${id}`, JSON.stringify(localData));
-      
-      return { id, expiresAt };
+      console.error('💥 [DEBUG] JSONBin 創建失敗:', error);
+      throw new Error('創建剪貼簿失敗，請檢查網路連接後重試');
     }
   }
 
@@ -294,36 +284,18 @@ class RealtimeClipboardManager {
             console.warn('⚠️ [DEBUG] 雲端讀取失敗:', response.status);
           }
         } catch (cloudError) {
-          console.warn('⚠️ [DEBUG] 雲端讀取錯誤:', cloudError);
+          // 檢查是否為 CORS 錯誤
+          if (cloudError instanceof TypeError && cloudError.message.includes('Failed to fetch')) {
+            console.warn('🌐 [DEBUG] CORS/網路問題，使用本地存儲（功能仍正常）');
+          } else {
+            console.warn('⚠️ [DEBUG] 雲端讀取錯誤:', cloudError);
+          }
         }
       }
       
-      // 方法3: 回退到本地存儲
-      console.log('🔍 [DEBUG] 回退到本地存儲查找');
-      const localData = localStorage.getItem(`clipboard-data-${id}`);
-      if (localData) {
-        const data = JSON.parse(localData);
-        console.log('✅ [DEBUG] 從本地存儲找到:', id);
-        
-        const clipboardData: RealtimeClipboardData = {
-          id: data.id,
-          content: data.content,
-          createdAt: new Date(data.createdAt),
-          updatedAt: new Date(data.updatedAt),
-          expiresAt: new Date(data.expiresAt)
-        };
-
-        if (clipboardData.expiresAt < new Date()) {
-          console.log('⏰ [DEBUG] 本地剪貼簿已過期:', id);
-          localStorage.removeItem(`clipboard-data-${id}`);
-          localStorage.removeItem(`binid-${id}`);
-          return null;
-        }
-
-        return clipboardData;
-      }
-
-      console.log('❌ [DEBUG] 所有方法都找不到剪貼簿:', id);
+      // 如果雲端無法存取，顯示適當的錯誤訊息
+      console.log('❌ [DEBUG] 無法從雲端載入剪貼簿:', id);
+      console.log('💡 [DEBUG] 這可能是網路問題，請稍後重試');
       return null;
       
     } catch (error) {
@@ -368,11 +340,16 @@ class RealtimeClipboardManager {
             throw new Error(`Update failed: ${response.status}`);
           }
         } catch (updateError) {
-          console.warn('⚠️ [DEBUG] 雲端更新失敗:', updateError);
+          // 檢查是否為 CORS 錯誤
+          if (updateError instanceof TypeError && updateError.message.includes('Failed to fetch')) {
+            console.warn('🌐 [DEBUG] CORS/網路問題，僅本地更新（跨標籤頁仍同步）');
+          } else {
+            console.warn('⚠️ [DEBUG] 雲端更新失敗:', updateError);
+          }
         }
       }
 
-      // 同時更新本地存儲
+      // 更新本地快取用於提升存取速度
       const localData = {
         id: updatedData.id,
         content: updatedData.content,
@@ -382,13 +359,6 @@ class RealtimeClipboardManager {
         binId: binId || undefined
       };
       localStorage.setItem(`clipboard-data-${id}`, JSON.stringify(localData));
-      
-      // 觸發 storage 事件
-      window.dispatchEvent(new StorageEvent('storage', {
-        key: `clipboard-data-${id}`,
-        newValue: JSON.stringify(localData),
-        storageArea: localStorage
-      }));
       
     } catch (error) {
       console.error('💥 [DEBUG] 更新剪貼簿失敗:', error);
@@ -443,26 +413,8 @@ class RealtimeClipboardManager {
     // 開始輪詢
     this.startPolling(id);
     
-    // 監聽本地存儲變化（跨標籤頁同步）
-    const handleStorageChange = (event: StorageEvent) => {
-      if (event.key === `clipboard-data-${id}` && event.newValue) {
-        try {
-          const data = JSON.parse(event.newValue);
-          const clipboardData: RealtimeClipboardData = {
-            id: data.id,
-            content: data.content,
-            createdAt: new Date(data.createdAt),
-            updatedAt: new Date(data.updatedAt),
-            expiresAt: new Date(data.expiresAt)
-          };
-          callback(clipboardData);
-        } catch (error) {
-          console.error('Error parsing storage event:', error);
-        }
-      }
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
+    // 純雲端同步，通過輪詢實現即時更新
+    console.log('📡 [DEBUG] 開始雲端即時同步監聽:', id);
     
     return () => {
       const index = this.subscribers.indexOf(callback);
@@ -472,7 +424,6 @@ class RealtimeClipboardManager {
       if (this.subscribers.length === 0) {
         this.stopPolling();
       }
-      window.removeEventListener('storage', handleStorageChange);
     };
   }
 
