@@ -13,7 +13,6 @@ class RealtimeClipboardManager {
   private pollingInterval: NodeJS.Timeout | null = null;
   private lastContent: string = '';
   private subscribers: Array<(data: RealtimeClipboardData | null) => void> = [];
-  private corsIssueDetected: boolean = false;
 
   // JSONBin.io API 配置
   private readonly API_BASE = 'https://api.jsonbin.io/v3/b';
